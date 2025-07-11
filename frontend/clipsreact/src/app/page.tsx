@@ -1,103 +1,268 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect } from "react";
+import { useSession, signIn, signOut } from "next-auth/react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Tweet } from "react-tweet";
+
+interface Clip {
+  id: number;
+  url: string;
+  creator: string;
+  tags: string[];
+  source: string;
+  likes: number; // number of likes
+  likedBy: string[]; // list of users who liked
+}
+
+function getTwitchEmbedUrl(url: string) {
+  const parent = typeof window !== "undefined" ? window.location.hostname : "localhost";
+  let userClipMatch = url.match(/twitch\.tv\/[^/]+\/clip\/([^/?]+)/);
+  if (userClipMatch) return `https://clips.twitch.tv/embed?clip=${userClipMatch[1]}&parent=${parent}`;
+  let clipMatch = url.match(/clips\.twitch\.tv\/([^/?]+)/);
+  if (clipMatch) return `https://clips.twitch.tv/embed?clip=${clipMatch[1]}&parent=${parent}`;
+  let videoMatch = url.match(/twitch\.tv\/videos\/(\d+)/);
+  if (videoMatch) return `https://player.twitch.tv/?video=${videoMatch[1]}&parent=${parent}`;
+  return null;
+}
+
+function getYouTubeEmbedUrl(url: string) {
+  const videoIdMatch = url.match(/[?&]v=([^&]+)/);
+  return videoIdMatch ? `https://www.youtube.com/embed/${videoIdMatch[1]}` : null;
+}
+
+function getKickEmbedUrl(url: string) {
+  const clipMatch = url.match(/kick\.com\/[^/]+\/clips\/(clip_[^/?]+)/);
+  return clipMatch ? `https://kick.com/embed/${clipMatch[1]}` : null;
+}
+
+function getRedditEmbedUrl(url: string) {
+  try {
+    return `https://www.redditmedia.com${new URL(url).pathname}?ref_source=embed&ref=share&embed=true`;
+  } catch {
+    return null;
+  }
+}
+
+function extractTweetId(url: string): string | null {
+  const match = url.match(/twitter\.com\/[^/]+\/status\/(\d+)/) || url.match(/x\.com\/[^/]+\/status\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+export default function HomePage() {
+  const { data: session } = useSession();
+  const [clips, setClips] = useState<Clip[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState("");
+  const [creatorFilter, setCreatorFilter] = useState("");
+  const [url, setUrl] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [source, setSource] = useState("");
+
+  async function fetchClips() {
+    setLoading(true);
+    setError(null);
+    try {
+      const query = [];
+      if (tagFilter) query.push(`tag=${encodeURIComponent(tagFilter)}`);
+      if (creatorFilter) query.push(`creator=${encodeURIComponent(creatorFilter)}`);
+      const queryString = query.length ? `?${query.join("&")}` : "";
+      const res = await fetch(`http://127.0.0.1:8000/clips/${queryString}`);
+      if (!res.ok) throw new Error("Failed to fetch clips");
+      const data: Clip[] = await res.json();
+      setClips(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitClip() {
+    if (!url || !source) return alert("Please provide URL and Source");
+    try {
+      const clipData = {
+        url,
+        tags,
+        creator: session?.user?.name || "Anonymous",
+        source,
+      };
+      const res = await fetch("http://127.0.0.1:8000/clips/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clipData),
+      });
+      if (!res.ok) throw new Error("Failed to submit clip");
+      fetchClips();
+      setUrl(""); setTags([]); setSource("");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unknown error");
+    }
+  }
+
+  async function handleLike(clipId: number) {
+    if (!session?.user?.name) {
+      alert("You must be signed in to like clips.");
+      return;
+    }
+
+    try {
+      // call backend like API
+      const res = await fetch(`http://127.0.0.1:8000/clips/${clipId}/like`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to update like");
+
+      const updatedClip = await res.json();
+
+      // Update the local clips state with new likes & likedBy
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId
+            ? { ...clip, likes: updatedClip.likes, likedBy: updatedClip.liked_by }
+            : clip
+        )
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Unknown error");
+    }
+  }
+
+  useEffect(() => {
+    fetchClips();
+  }, [tagFilter, creatorFilter]);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <main className="max-w-5xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">🎬 Clip Showcase</h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      {!session ? (
+        <Button onClick={() => signIn()} className="mb-6">Sign in to submit clips</Button>
+      ) : (
+        <div className="flex items-center justify-between mb-6">
+          <p>Signed in as <strong>{session.user?.name}</strong></p>
+          <Button variant="destructive" onClick={() => signOut()}>Sign out</Button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+
+      {session && (
+        <Card className="mb-6">
+          <CardContent className="space-y-3 p-4">
+            <h2 className="text-xl font-semibold">Submit a Clip</h2>
+
+            <Input
+              placeholder="Clip URL"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+
+            <div>
+              <Input
+                placeholder="Enter tag and press Enter"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const newTag = e.currentTarget.value.trim();
+                    if (newTag && !tags.includes(newTag)) {
+                      setTags([...tags, newTag]);
+                      e.currentTarget.value = "";
+                    }
+                  }
+                }}
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {tags.map((tag, i) => (
+                  <Badge
+                    key={i}
+                    variant="secondary"
+                    className="flex items-center gap-1 cursor-pointer"
+                    onClick={() => setTags(tags.filter((t) => t !== tag))}
+                  >
+                    {tag} ✕
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <Select onValueChange={(value) => setSource(value)} defaultValue={source}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="YouTube">YouTube</SelectItem>
+                <SelectItem value="Twitch">Twitch</SelectItem>
+                <SelectItem value="Kick">Kick</SelectItem>
+                <SelectItem value="Reddit">Reddit</SelectItem>
+                <SelectItem value="Twitter">Twitter</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button onClick={submitClip}>Submit</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="mb-6 flex gap-4">
+        <Input placeholder="Filter by tag" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} />
+        <Input placeholder="Filter by creator" value={creatorFilter} onChange={(e) => setCreatorFilter(e.target.value)} />
+      </div>
+
+      {loading && <p>Loading clips...</p>}
+      {error && <p className="text-red-600">Error: {error}</p>}
+
+      <div className="columns-1 sm:columns-2 gap-6 space-y-6">
+        {clips.length === 0 && !loading && <p>No clips found.</p>}
+        {clips.map(({ id, url, creator, tags, source, likes, likedBy }) => {
+          const twitch = getTwitchEmbedUrl(url);
+          const youtube = getYouTubeEmbedUrl(url);
+          const kick = getKickEmbedUrl(url);
+          const reddit = getRedditEmbedUrl(url);
+          const tweetId = extractTweetId(url);
+
+          const userId = session?.user?.name;
+          const likedByArray = Array.isArray(likedBy) ? likedBy : [];
+          const userLiked = userId ? likedByArray.includes(userId) : false;
+
+          return (
+            <Card key={id} className="break-inside-avoid mb-6">
+              <CardContent className="p-4">
+                <p className="font-semibold text-sm mb-2">{creator} • {source}</p>
+                {youtube && <iframe src={youtube} width="100%" height="200" allowFullScreen className="rounded" />}
+                {twitch && <iframe src={twitch} width="100%" height="378" allowFullScreen className="rounded" />}
+                {kick && <iframe src={kick} width="100%" height="400" allowFullScreen className="rounded" />}
+                {reddit && source.toLowerCase() === "reddit" && <iframe src={reddit} width="100%" height="400" allowFullScreen className="rounded" />}
+                {tweetId && <Tweet id={tweetId} />}
+                {!youtube && !twitch && !kick && !reddit && !tweetId && (
+                  <a href={url} target="_blank" className="text-blue-600 underline">Watch clip</a>
+                )}
+                <p className="mt-2 text-sm text-gray-600">
+                  Tags: {Array.isArray(tags) ? tags.join(", ") : JSON.parse(tags).join(", ")}
+                </p>
+
+                {/* Like button */}
+                <Button
+                  variant={userLiked ? "destructive" : "default"}
+                  onClick={() => handleLike(id)}
+                  className="mt-3"
+                >
+                  {userLiked ? "❤️ Unlike" : "🤍 Like"} ({likes ?? 0})
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </main>
   );
 }
