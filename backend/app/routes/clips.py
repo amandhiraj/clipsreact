@@ -29,3 +29,29 @@ def get_clips(tag: str = None, creator: str = None, session = Depends(get_sessio
         query = query.where(func.lower(Clip.creator).like(f'%{creator.lower()}%'))
     return session.exec(query).all()
 
+def get_current_user():
+    # Return a fixed username or ID for now
+    return "testuser"
+
+@router.post("/{clip_id}/like")
+def like_clip(
+    clip_id: int,
+    session = Depends(get_session),
+    current_user: str = Depends(get_current_user),  # replace with your auth dependency
+):
+    clip = session.get(Clip, clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+
+    liked_users = clip.get_liked_by_list()
+
+    if current_user in liked_users:
+        clip.remove_like(current_user)
+    else:
+        clip.add_like(current_user)
+
+    session.add(clip)
+    session.commit()
+    session.refresh(clip)
+
+    return {"likes": clip.likes, "liked_by": clip.get_liked_by_list()}
