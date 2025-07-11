@@ -1,6 +1,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
+from sqlalchemy import func
 from app.models import Clip
 from app.db import get_session
 from typing import List
@@ -14,15 +15,13 @@ def create_clip(clip: Clip, session = Depends(get_session)):
     session.refresh(clip)
     return clip
 
+
 @router.get("/", response_model=List[Clip])
 def get_clips(tag: str = None, creator: str = None, session = Depends(get_session)):
-    clips = session.exec(select(Clip)).all()
-
+    query = select(Clip)
     if tag:
-        clips = [clip for clip in clips if tag in clip.tags]
-
+        query = query.where(func.lower(Clip.tags).like(f'%{tag.lower()}%'))
     if creator:
-        clips = [clip for clip in clips if clip.creator == creator]
-
-    return clips
+        query = query.where(func.lower(Clip.creator).like(f'%{creator.lower()}%'))
+    return session.exec(query).all()
 
