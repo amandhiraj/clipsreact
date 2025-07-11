@@ -21,8 +21,9 @@ interface Clip {
   creator: string;
   tags: string[];
   source: string;
-  likes: number; // number of likes
-  likedBy: string[]; // list of users who liked
+  title?: string; // optional, if you add title
+  likes: number;
+  likedBy: string[];
 }
 
 function getTwitchEmbedUrl(url: string) {
@@ -58,14 +59,13 @@ function extractTweetId(url: string): string | null {
   const match = url.match(/twitter\.com\/[^/]+\/status\/(\d+)/) || url.match(/x\.com\/[^/]+\/status\/(\d+)/);
   return match ? match[1] : null;
 }
-
 export default function HomePage() {
   const { data: session } = useSession();
   const [clips, setClips] = useState<Clip[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tagFilter, setTagFilter] = useState("");
-  const [creatorFilter, setCreatorFilter] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState(""); // single search input
   const [url, setUrl] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [source, setSource] = useState("");
@@ -74,10 +74,7 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     try {
-      const query = [];
-      if (tagFilter) query.push(`tag=${encodeURIComponent(tagFilter)}`);
-      if (creatorFilter) query.push(`creator=${encodeURIComponent(creatorFilter)}`);
-      const queryString = query.length ? `?${query.join("&")}` : "";
+      const queryString = searchTerm ? `?search=${encodeURIComponent(searchTerm)}` : "";
       const res = await fetch(`http://127.0.0.1:8000/clips/${queryString}`);
       if (!res.ok) throw new Error("Failed to fetch clips");
       const data: Clip[] = await res.json();
@@ -141,7 +138,7 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchClips();
-  }, [tagFilter, creatorFilter]);
+  }, []); // fetch clips on mount only
 
   return (
     <main className="max-w-5xl mx-auto p-6">
@@ -161,12 +158,14 @@ export default function HomePage() {
           <CardContent className="space-y-3 p-4">
             <h2 className="text-xl font-semibold">Submit a Clip</h2>
 
+            {/* URL input */}
             <Input
               placeholder="Clip URL"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
 
+            {/* Tags input */}
             <div>
               <Input
                 placeholder="Enter tag and press Enter"
@@ -195,6 +194,7 @@ export default function HomePage() {
               </div>
             </div>
 
+            {/* Source select */}
             <Select onValueChange={(value) => setSource(value)} defaultValue={source}>
               <SelectTrigger>
                 <SelectValue placeholder="Select Source" />
@@ -213,11 +213,20 @@ export default function HomePage() {
         </Card>
       )}
 
-      <div className="mb-6 flex gap-4">
-        <Input placeholder="Filter by tag" value={tagFilter} onChange={(e) => setTagFilter(e.target.value)} />
-        <Input placeholder="Filter by creator" value={creatorFilter} onChange={(e) => setCreatorFilter(e.target.value)} />
+      {/* Single search input */}
+      <div className="mb-6 flex gap-4 items-center">
+        <Input
+          placeholder="Search clips by creator, tag, title, source..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") fetchClips();
+          }}
+        />
+        <Button onClick={fetchClips}>Search</Button>
       </div>
 
+      
       {loading && <p>Loading clips...</p>}
       {error && <p className="text-red-600">Error: {error}</p>}
 
